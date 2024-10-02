@@ -107,6 +107,7 @@ class GcodeExtension(EffectExtension):
         if self.options.do_z_axis_start:
             header.append(interface_instance.linear_move(z=self.options.z_axis_start))
         if self.options.move_to_origin_end:
+            footer.append(interface_instance.set_movement_speed(self.options.travel_speed))
             footer.append(interface_instance.linear_move(x=0, y=0))
 
         # Generate gcode
@@ -118,6 +119,13 @@ class GcodeExtension(EffectExtension):
 
         transformation.add_translation(self.options.horizontal_offset, self.options.vertical_offset)
         transformation.add_scale(self.options.scaling_factor)
+
+        if self.options.bed_use_document:
+            bed_width = self.svg.get('width')
+            bed_height = self.svg.get('height')
+        else:
+            bed_width = self.options.bed_widtt
+            bed_height = self.options.bed_height
 
         if self.options.machine_origin == "center":
             transformation.add_translation(-self.options.bed_width / 2, self.options.bed_height / 2)
