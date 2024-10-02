@@ -93,6 +93,9 @@ class GcodeExtension(EffectExtension):
                 self.debug(f"Header file does not exist at {self.options.header_path}")
                 exit(2)
 
+        if self.options.g92_zero:
+            header.append("G92X0Y0Z0;")
+
         footer = []
         if self.options.footer_path is not None:
             if os.path.isfile(self.options.footer_path):
