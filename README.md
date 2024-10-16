@@ -1,3 +1,9 @@
+# This Fork.
+
+A fork for adding small features I find helpful.
+
+- "Use document size as bed size" checkbox so you don't have to enter the document size twice.
+
 # J Tech Photonics Laser Tool (Community version)
 This Inkscape extension generates gcode for laser cutters and plotting machines from an SVG file.
 
