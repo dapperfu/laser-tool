@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "j-tech-photonics-laser-tool"
+name = "laser-gcode"
 version = "2.0.0"
 description = "Inkscape extension and CLI tool for generating G-code for laser cutters from SVG files"
 readme = "README.md"
@@ -35,13 +35,13 @@ tomli = [
 ]
 
 [project.scripts]
-combine-cut-engrave = "laser.combine_cut_engrave:entry_point"
+laser-gcode = "laser.combine_cut_engrave:entry_point"
 
 [project.urls]
-Homepage = "https://github.com/JTechPhotonics/J-Tech-Photonics-Laser-Tool"
-Documentation = "https://github.com/JTechPhotonics/J-Tech-Photonics-Laser-Tool"
-Repository = "https://github.com/JTechPhotonics/J-Tech-Photonics-Laser-Tool"
-Issues = "https://github.com/JTechPhotonics/J-Tech-Photonics-Laser-Tool/issues"
+Homepage = "https://github.com/dapperfu/J-Tech-Photonics-Laser-Tool-"
+Documentation = "https://github.com/dapperfu/J-Tech-Photonics-Laser-Tool-"
+Repository = "https://github.com/dapperfu/J-Tech-Photonics-Laser-Tool-"
+Issues = "https://github.com/dapperfu/J-Tech-Photonics-Laser-Tool-/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["laser"]
