@@ -35,7 +35,7 @@ tomli = [
 ]
 
 [project.scripts]
-combine-cut-engrave = "laser.combine_cut_engrave:main"
+combine-cut-engrave = "laser.combine_cut_engrave:entry_point"
 
 [project.urls]
 Homepage = "https://github.com/JTechPhotonics/J-Tech-Photonics-Laser-Tool"

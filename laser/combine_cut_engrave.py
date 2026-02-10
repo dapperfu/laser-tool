@@ -12,6 +12,15 @@ import tempfile
 import warnings
 from pathlib import Path
 
+# TOML library support (per .cursor/rules/python/toml-config.mdc)
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None  # type: ignore
+
 # Suppress the "empty body" warning which can be a false positive
 warnings.filterwarnings("ignore", message=".*Compile with an empty body.*")
 warnings.filterwarnings("ignore", category=UserWarning, message=".*empty body.*")
@@ -158,9 +167,7 @@ class CombineConfig:
         self.header = header or []
         self.footer = footer or []
 
-    def to_conversion_config(
-        self, layer_name: str, cutting_speed: float, power: int
-    ) -> ConversionConfig:
+    def to_conversion_config(self, layer_name: str, cutting_speed: float, power: int) -> ConversionConfig:
         """
         Convert to ConversionConfig for a specific layer.
 
@@ -266,9 +273,7 @@ def remove_gcode_footer(gcode_path: str) -> list[str]:
         if stripped == "M5" or stripped == "M5;":
             in_footer = True
             continue
-        if in_footer and (
-            stripped.startswith("G0 X0 Y0") or stripped.startswith("G0 X0 Y0 Z0")
-        ):
+        if in_footer and (stripped.startswith("G0 X0 Y0") or stripped.startswith("G0 X0 Y0 Z0")):
             continue
         if in_footer and stripped == "":
             continue
@@ -301,12 +306,7 @@ def get_gcode_body_and_footer(gcode_path: str) -> list[str]:
 
     for line in lines:
         stripped = line.strip()
-        if (
-            stripped == "G21"
-            or stripped == "G21;"
-            or stripped == "G20"
-            or stripped == "G20;"
-        ):
+        if stripped == "G21" or stripped == "G21;" or stripped == "G20" or stripped == "G20;":
             found_unit = True
             continue
         if found_unit:
@@ -389,9 +389,7 @@ def generate_layer_gcode(
         True if G-code was generated successfully, False otherwise
     """
     try:
-        conversion_config = config.to_conversion_config(
-            layer_name, cutting_speed, power
-        )
+        conversion_config = config.to_conversion_config(layer_name, cutting_speed, power)
         convert_svg_to_gcode(svg_path, output_path, conversion_config)
         return True
     except Exception:
@@ -440,9 +438,7 @@ def combine_cut_engrave(
             f"Power=S{config.engrave_power} ({config.engrave_power * 100 // 255}%)"
         )
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".gcode", dir=output_dir, delete=False
-    ) as tmp_engrave:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".gcode", dir=output_dir, delete=False) as tmp_engrave:
         temp_engrave_path = tmp_engrave.name
 
     try:
@@ -458,21 +454,13 @@ def combine_cut_engrave(
         if not success:
             if verbose:
                 click.echo("  ✗ Failed to generate engrave layer G-code")
-                click.echo(
-                    "  Warning: Engrave layer may not exist in SVG, continuing with cut only..."
-                )
+                click.echo("  Warning: Engrave layer may not exist in SVG, continuing with cut only...")
             temp_engrave_path = None
         elif os.path.exists(temp_engrave_path) and is_empty_gcode(temp_engrave_path):
             if verbose:
-                click.echo(
-                    "  ⚠ Warning: Engrave layer found but contains no paths to process"
-                )
-                click.echo(
-                    "  Hint: Make sure objects in the 'engrave' layer are converted to paths"
-                )
-                click.echo(
-                    "        (In Inkscape: Select objects → Path → Object to Path)"
-                )
+                click.echo("  ⚠ Warning: Engrave layer found but contains no paths to process")
+                click.echo("  Hint: Make sure objects in the 'engrave' layer are converted to paths")
+                click.echo("        (In Inkscape: Select objects → Path → Object to Path)")
                 click.echo("  Continuing with cut only...")
             os.unlink(temp_engrave_path)
             temp_engrave_path = None
@@ -495,9 +483,7 @@ def combine_cut_engrave(
             f"Power=S{config.cut_power} ({config.cut_power * 100 // 255}%)"
         )
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".gcode", dir=output_dir, delete=False
-    ) as tmp_cut:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".gcode", dir=output_dir, delete=False) as tmp_cut:
         temp_cut_path = tmp_cut.name
 
     try:
@@ -604,8 +590,567 @@ def combine_cut_engrave(
         return False, f"Failed to create combined G-code file: {e}"
 
 
-@click.command()
+# ============================================================================
+# Configuration File Support
+# ============================================================================
+
+
+def find_config_file(explicit_path: str | None) -> Path | None:
+    """
+    Find configuration file following lookup order.
+
+    Parameters
+    ----------
+    explicit_path : str or None
+        Explicit path provided via --config option
+
+    Returns
+    -------
+    Path or None
+        Path to config file if found, None otherwise
+    """
+    # 1. Explicit path provided
+    if explicit_path:
+        path = Path(explicit_path)
+        return path if path.exists() else None
+
+    # 2. config.toml in current working directory
+    cwd_config = Path.cwd() / "config.toml"
+    if cwd_config.exists():
+        return cwd_config
+
+    # 3. Environment variable
+    env_var = os.getenv("COMBINE_CUT_ENGRAVE_CONFIG")
+    if env_var:
+        path = Path(env_var)
+        return path if path.exists() else None
+
+    return None
+
+
+def load_config(config_path: str | None = None) -> dict:
+    """
+    Load configuration from TOML file.
+
+    Parameters
+    ----------
+    config_path : str or None
+        Explicit path to config file, or None to use lookup order
+
+    Returns
+    -------
+    dict
+        Configuration dictionary
+
+    Raises
+    ------
+    FileNotFoundError
+        If config file not found
+    ValueError
+        If config file is invalid
+    """
+    if tomllib is None:
+        raise ImportError("TOML support requires tomli for Python < 3.11. Install with: pip install tomli")
+
+    resolved_path = find_config_file(config_path)
+
+    if resolved_path is None:
+        raise FileNotFoundError(
+            "Configuration file not found. "
+            "Use 'combine-cut-engrave config generate' to create one, "
+            "or specify with --config/-c"
+        )
+
+    with open(resolved_path, "rb") as f:
+        config = tomllib.load(f)
+
+    validate_config(config)
+    return config
+
+
+def validate_config(config: dict) -> None:
+    """
+    Validate configuration structure and values.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary to validate
+
+    Raises
+    ------
+    ValueError
+        If configuration is invalid
+    """
+    # Check for global section
+    if "global" not in config:
+        raise ValueError("Configuration must have a [global] section")
+
+    global_config = config["global"]
+
+    # Validate global settings types and ranges
+    validations = [
+        ("unit", str, ["mm", "in"]),
+        ("travel_speed", (int, float), lambda x: x > 0),
+        ("passes", int, lambda x: x > 0),
+        ("pass_depth", (int, float), lambda x: x > 0),
+        ("dwell_time", (int, float), lambda x: x >= 0),
+        ("approximation_tolerance", (int, float), lambda x: x > 0),
+        ("machine_origin", str, ["bottom-left", "center", "top-left"]),
+        ("zero_machine", bool, None),
+        ("invert_y_axis", bool, None),
+        ("use_document_size", bool, None),
+        ("bed_width", (int, float), lambda x: x > 0),
+        ("bed_height", (int, float), lambda x: x > 0),
+        ("scaling_factor", (int, float), lambda x: x > 0),
+        ("do_z_axis_start", bool, None),
+        ("move_to_origin_end", bool, None),
+        ("do_laser_off_start", bool, None),
+        ("do_laser_off_end", bool, None),
+    ]
+
+    for key, expected_type, constraint in validations:
+        if key in global_config:
+            value = global_config[key]
+            # Type check
+            if not isinstance(value, expected_type):
+                raise ValueError(f"Invalid type for global.{key}: expected {expected_type}, got {type(value).__name__}")
+            # Constraint check
+            if constraint is not None:
+                if isinstance(constraint, list):
+                    if value not in constraint:
+                        raise ValueError(f"Invalid value for global.{key}: {value}. Must be one of: {constraint}")
+                elif callable(constraint):
+                    if not constraint(value):
+                        raise ValueError(f"Invalid value for global.{key}: {value}")
+
+    # Validate layer sections
+    for section_name, section_data in config.items():
+        if section_name == "global":
+            continue
+
+        if not isinstance(section_data, dict):
+            raise ValueError(f"Section [{section_name}] must be a table")
+
+        # Layer sections should have cutting_speed and power
+        if "cutting_speed" in section_data:
+            cutting_speed = section_data["cutting_speed"]
+            if not isinstance(cutting_speed, (int, float)) or cutting_speed <= 0:
+                raise ValueError(f"Invalid cutting_speed in [{section_name}]: must be positive number")
+
+        if "power" in section_data:
+            power = section_data["power"]
+            if not isinstance(power, int) or not (0 <= power <= 255):
+                raise ValueError(f"Invalid power in [{section_name}]: must be integer 0-255")
+
+
+def merge_config_with_cli(config: dict, cli_args: dict) -> CombineConfig:
+    """
+    Merge configuration file with CLI arguments (CLI overrides config).
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary from TOML file
+    cli_args : dict
+        CLI arguments (from Click context)
+
+    Returns
+    -------
+    CombineConfig
+        Merged configuration object
+    """
+    global_config = config.get("global", {})
+    cut_config = config.get("cut", {})
+    engrave_config = config.get("engrave", {})
+
+    # Start with CombineConfig defaults
+    defaults = CombineConfig()
+
+    # Start with global settings (override defaults)
+    settings = {
+        "travel_speed": global_config.get("travel_speed", defaults.travel_speed),
+        "unit": global_config.get("unit", defaults.unit),
+        "passes": global_config.get("passes", defaults.passes),
+        "pass_depth": global_config.get("pass_depth", defaults.pass_depth),
+        "dwell_time": global_config.get("dwell_time", defaults.dwell_time),
+        "approximation_tolerance": global_config.get("approximation_tolerance", defaults.approximation_tolerance),
+        "tool_off_command": global_config.get("tool_off_command", defaults.tool_off_command),
+        "machine_origin": global_config.get("machine_origin", defaults.machine_origin),
+        "zero_machine": global_config.get("zero_machine", defaults.zero_machine),
+        "invert_y_axis": global_config.get("invert_y_axis", defaults.invert_y_axis),
+        "use_document_size": global_config.get("use_document_size", defaults.use_document_size),
+        "bed_width": global_config.get("bed_width", defaults.bed_width),
+        "bed_height": global_config.get("bed_height", defaults.bed_height),
+        "horizontal_offset": global_config.get("horizontal_offset", defaults.horizontal_offset),
+        "vertical_offset": global_config.get("vertical_offset", defaults.vertical_offset),
+        "scaling_factor": global_config.get("scaling_factor", defaults.scaling_factor),
+        "z_axis_start": global_config.get("z_axis_start", defaults.z_axis_start),
+        "do_z_axis_start": global_config.get("do_z_axis_start", defaults.do_z_axis_start),
+        "move_to_origin_end": global_config.get("move_to_origin_end", defaults.move_to_origin_end),
+        "do_laser_off_start": global_config.get("do_laser_off_start", defaults.do_laser_off_start),
+        "do_laser_off_end": global_config.get("do_laser_off_end", defaults.do_laser_off_end),
+    }
+
+    # Add layer-specific settings (override global)
+    settings["engrave_cutting_speed"] = engrave_config.get("cutting_speed", defaults.engrave_cutting_speed)
+    settings["engrave_power"] = engrave_config.get("power", defaults.engrave_power)
+    settings["cut_cutting_speed"] = cut_config.get("cutting_speed", defaults.cut_cutting_speed)
+    settings["cut_power"] = cut_config.get("power", defaults.cut_power)
+
+    # Apply CLI overrides (CLI always wins)
+    cli_mapping = {
+        "travel_speed": "travel_speed",
+        "engrave_cutting_speed": "engrave_cutting_speed",
+        "engrave_power": "engrave_power",
+        "cut_cutting_speed": "cut_cutting_speed",
+        "cut_power": "cut_power",
+        "unit": "unit",
+        "passes": "passes",
+        "pass_depth": "pass_depth",
+        "dwell_time": "dwell_time",
+        "approximation_tolerance": "approximation_tolerance",
+        "tool_off_command": "tool_off_command",
+        "machine_origin": "machine_origin",
+        "zero_machine": "zero_machine",
+        "invert_y_axis": "invert_y_axis",
+        "use_document_size": "use_document_size",
+        "bed_width": "bed_width",
+        "bed_height": "bed_height",
+        "horizontal_offset": "horizontal_offset",
+        "vertical_offset": "vertical_offset",
+        "scaling_factor": "scaling_factor",
+        "z_axis_start": "z_axis_start",
+        "do_z_axis_start": "do_z_axis_start",
+        "move_to_origin_end": "move_to_origin_end",
+        "do_laser_off_start": "do_laser_off_start",
+        "do_laser_off_end": "do_laser_off_end",
+    }
+
+    for cli_key, config_key in cli_mapping.items():
+        if cli_key in cli_args and cli_args[cli_key] is not None:
+            settings[config_key] = cli_args[cli_key]
+
+    # Handle header and footer from config
+    header = global_config.get("header", [])
+    footer = global_config.get("footer", [])
+
+    return CombineConfig(
+        header=header if isinstance(header, list) else [],
+        footer=footer if isinstance(footer, list) else [],
+        **settings,
+    )
+
+
+def config_to_combine_config(config: dict, layer_name: str, cli_overrides: dict | None = None) -> CombineConfig:
+    """
+    Convert config dict to CombineConfig for a specific layer.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary
+    layer_name : str
+        Name of the layer (e.g., "cut", "engrave")
+    cli_overrides : dict or None
+        CLI argument overrides
+
+    Returns
+    -------
+    CombineConfig
+        Configuration object for the layer
+    """
+    global_config = config.get("global", {})
+    layer_config = config.get(layer_name, {})
+
+    # Start with global settings
+    settings = dict(global_config)
+
+    # Override with layer-specific settings
+    if "cutting_speed" in layer_config:
+        settings[f"{layer_name}_cutting_speed"] = layer_config["cutting_speed"]
+    if "power" in layer_config:
+        settings[f"{layer_name}_power"] = layer_config["power"]
+
+    # Apply CLI overrides
+    if cli_overrides:
+        settings.update(cli_overrides)
+
+    # Extract layer-specific settings
+    engrave_cutting_speed = settings.pop("engrave_cutting_speed", 1000)
+    engrave_power = settings.pop("engrave_power", 75)
+    cut_cutting_speed = settings.pop("cut_cutting_speed", 250)
+    cut_power = settings.pop("cut_power", 255)
+
+    # Get cutting speed and power for this layer
+    cutting_speed_key = f"{layer_name}_cutting_speed"
+    power_key = f"{layer_name}_power"
+
+    if cutting_speed_key in settings:
+        layer_cutting_speed = settings.pop(cutting_speed_key)
+        if layer_name == "engrave":
+            engrave_cutting_speed = layer_cutting_speed
+        elif layer_name == "cut":
+            cut_cutting_speed = layer_cutting_speed
+
+    if power_key in settings:
+        layer_power = settings.pop(power_key)
+        if layer_name == "engrave":
+            engrave_power = layer_power
+        elif layer_name == "cut":
+            cut_power = layer_power
+
+    # Handle header and footer
+    header = settings.pop("header", [])
+    footer = settings.pop("footer", [])
+
+    return CombineConfig(
+        engrave_cutting_speed=engrave_cutting_speed,
+        engrave_power=engrave_power,
+        cut_cutting_speed=cut_cutting_speed,
+        cut_power=cut_power,
+        header=header if isinstance(header, list) else [],
+        footer=footer if isinstance(footer, list) else [],
+        **settings,
+    )
+
+
+def generate_config_template() -> str:
+    """
+    Generate TOML config template with defaults and documentation.
+
+    Returns
+    -------
+    str
+        TOML configuration template
+    """
+    return """# Combine Cut Engrave Configuration
+# Generated by: combine-cut-engrave config generate
+# This file contains global settings and layer-specific settings
+
+# Global settings (apply to all layers)
+[global]
+# Unit of measurement
+# Options:
+#   - "mm": Millimeters
+#   - "in": Inches
+# Default: "mm"
+unit = "mm"
+
+# Travel speed for both layers (unit/min)
+# Default: 3000.0
+# Valid range: > 0
+travel_speed = 3000.0
+
+# Number of passes
+# Default: 1
+# Valid range: > 0
+passes = 1
+
+# Pass depth (unit)
+# Default: 1.0
+# Valid range: > 0
+pass_depth = 1.0
+
+# Dwell time before moving (ms)
+# Default: 0.0
+# Valid range: >= 0
+dwell_time = 0.0
+
+# Approximation tolerance
+# Default: 0.01
+# Valid range: > 0
+approximation_tolerance = 0.01
+
+# Tool off command (G-code)
+# Default: "M5;"
+tool_off_command = "M5;"
+
+# Machine origin
+# Options:
+#   - "bottom-left": Origin at bottom-left corner
+#   - "center": Origin at center of bed
+#   - "top-left": Origin at top-left corner
+# Default: "bottom-left"
+machine_origin = "bottom-left"
+
+# Zero machine coordinates (G92)
+# Default: false
+zero_machine = false
+
+# Invert Y-axis
+# Default: false
+invert_y_axis = false
+
+# Use document size as bed size
+# Default: true
+use_document_size = true
+
+# Bed X width (unit)
+# Default: 200.0
+# Valid range: > 0
+bed_width = 200.0
+
+# Bed Y length (unit)
+# Default: 200.0
+# Valid range: > 0
+bed_height = 200.0
+
+# G-code X offset (unit)
+# Default: 0.0
+horizontal_offset = 0.0
+
+# G-code Y offset (unit)
+# Default: 0.0
+vertical_offset = 0.0
+
+# G-code scaling factor
+# Default: 1.0
+# Valid range: > 0
+scaling_factor = 1.0
+
+# Absolute Z-axis start position (unit)
+# Default: 0.0
+z_axis_start = 0.0
+
+# Set Z-axis start position
+# Default: false
+do_z_axis_start = false
+
+# Move to origin when done
+# Default: false
+move_to_origin_end = false
+
+# Turn laser off before job
+# Default: true
+do_laser_off_start = true
+
+# Turn laser off after job
+# Default: true
+do_laser_off_end = true
+
+# Layer-specific settings
+# Settings in layer sections override global settings for that layer
+# If a layer exists in the SVG with the same name as a section, use that section's settings
+
+# Cut layer settings
+[cut]
+# Cutting speed for cut layer (unit/min)
+# Default: 250.0
+# Valid range: > 0
+cutting_speed = 250.0
+
+# Power for cut layer (0-255)
+# Default: 255
+# Valid range: 0-255
+power = 255
+
+# Engrave layer settings
+[engrave]
+# Cutting speed for engrave layer (unit/min)
+# Default: 1000.0
+# Valid range: > 0
+cutting_speed = 1000.0
+
+# Power for engrave layer (0-255)
+# Default: 75
+# Valid range: 0-255
+power = 75
+
+# Additional layers can be added dynamically
+# Example:
+# [layer_name]
+# cutting_speed = <value>
+# power = <value>
+"""
+
+
+@click.group()
+def cli():
+    """Combine cut and engrave layers from SVG into G-code."""
+    pass
+
+
+@cli.group("config")
+def config_group():
+    """Configuration management commands."""
+    pass
+
+
+@config_group.command("generate")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(),
+    default=None,
+    help="Path to configuration file (default: config.toml in current directory)",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Overwrite existing configuration file without prompting",
+)
+def config_generate(config: str | None, force: bool) -> None:
+    """Generate default configuration file with placeholders for required values."""
+    if config is None:
+        config_path = Path.cwd() / "config.toml"
+    else:
+        config_path = Path(config)
+
+    if config_path.exists() and not force:
+        if not click.confirm(f"Configuration file exists at {config_path}. Overwrite?"):
+            click.echo("Aborted.")
+            return
+
+    # Generate config with defaults and documentation
+    config_content = generate_config_template()
+    config_path.write_text(config_content, encoding="utf-8")
+
+    click.echo(f"Configuration file generated at {config_path}")
+    click.echo("You can now edit the configuration file to customize settings.")
+
+
+@config_group.command("validate")
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(),
+    default=None,
+    help="Path to configuration file to validate",
+)
+def config_validate(config: str | None) -> None:
+    """Validate configuration file."""
+    if tomllib is None:
+        click.echo(
+            "Error: TOML support requires tomli for Python < 3.11. Install with: pip install tomli",
+            err=True,
+        )
+        sys.exit(1)
+
+    config_path = find_config_file(config)
+
+    if config_path is None:
+        click.echo("Error: Configuration file not found.", err=True)
+        sys.exit(1)
+
+    try:
+        config_data = load_config(str(config_path))
+        validate_config(config_data)
+        click.echo(f"Configuration file {config_path} is valid.")
+    except Exception as e:
+        click.echo(f"Error: Configuration file is invalid: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
 @click.argument("svg_file", type=click.Path(exists=True, readable=True))
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, readable=True),
+    default=None,
+    help="Path to configuration file (default: config.toml in current directory)",
+)
 @click.option(
     "--output",
     "-o",
@@ -636,9 +1181,7 @@ def combine_cut_engrave(
     default=250,
     help="Cut layer cutting speed (unit/min, default: 250)",
 )
-@click.option(
-    "--cut-power", type=int, default=255, help="Cut layer power (0-255, default: 255)"
-)
+@click.option("--cut-power", type=int, default=255, help="Cut layer power (0-255, default: 255)")
 @click.option(
     "--unit",
     "-u",
@@ -646,12 +1189,8 @@ def combine_cut_engrave(
     default="mm",
     help="Unit of measurement (default: mm)",
 )
-@click.option(
-    "--passes", "-p", type=int, default=1, help="Number of passes (default: 1)"
-)
-@click.option(
-    "--pass-depth", type=float, default=1, help="Pass depth (unit, default: 1)"
-)
+@click.option("--passes", "-p", type=int, default=1, help="Number of passes (default: 1)")
+@click.option("--pass-depth", type=float, default=1, help="Pass depth (unit, default: 1)")
 @click.option(
     "--dwell-time",
     type=float,
@@ -691,12 +1230,8 @@ def combine_cut_engrave(
     default=True,
     help="Use document size as bed size (default: True)",
 )
-@click.option(
-    "--bed-width", type=float, default=200, help="Bed X width (unit, default: 200)"
-)
-@click.option(
-    "--bed-height", type=float, default=200, help="Bed Y length (unit, default: 200)"
-)
+@click.option("--bed-width", type=float, default=200, help="Bed X width (unit, default: 200)")
+@click.option("--bed-height", type=float, default=200, help="Bed Y length (unit, default: 200)")
 @click.option(
     "--horizontal-offset",
     type=float,
@@ -709,9 +1244,7 @@ def combine_cut_engrave(
     default=0,
     help="G-code Y offset (unit, default: 0)",
 )
-@click.option(
-    "--scaling-factor", type=float, default=1, help="G-code scaling factor (default: 1)"
-)
+@click.option("--scaling-factor", type=float, default=1, help="G-code scaling factor (default: 1)")
 @click.option(
     "--z-axis-start",
     type=float,
@@ -751,6 +1284,7 @@ def combine_cut_engrave(
 def main(
     svg_file: str,
     output: str | None,
+    config_file: str | None,
     travel_speed: float,
     engrave_cutting_speed: float,
     engrave_power: int,
@@ -803,6 +1337,17 @@ def main(
     click.echo(f"Output:     {output_path}")
     click.echo("")
 
+    # Load configuration file if available
+    file_config = None
+    try:
+        file_config = load_config(config_file)
+    except FileNotFoundError:
+        # Config file not found, use CLI defaults
+        pass
+    except Exception as e:
+        click.echo(f"Error loading configuration file: {e}", err=True)
+        sys.exit(1)
+
     # Load header and footer files
     header = []
     if header_file:
@@ -814,36 +1359,74 @@ def main(
         with open(footer_file) as f:
             footer = f.read().splitlines()
 
-    # Create configuration
-    config = CombineConfig(
-        travel_speed=travel_speed,
-        engrave_cutting_speed=engrave_cutting_speed,
-        engrave_power=engrave_power,
-        cut_cutting_speed=cut_cutting_speed,
-        cut_power=cut_power,
-        unit=unit,
-        passes=passes,
-        pass_depth=pass_depth,
-        dwell_time=dwell_time,
-        approximation_tolerance=approximation_tolerance,
-        tool_off_command=tool_off_command,
-        machine_origin=machine_origin,
-        zero_machine=zero_machine,
-        invert_y_axis=invert_y_axis,
-        use_document_size=use_document_size,
-        bed_width=bed_width,
-        bed_height=bed_height,
-        horizontal_offset=horizontal_offset,
-        vertical_offset=vertical_offset,
-        scaling_factor=scaling_factor,
-        z_axis_start=z_axis_start,
-        do_z_axis_start=do_z_axis_start,
-        move_to_origin_end=move_to_origin_end,
-        do_laser_off_start=do_laser_off_start,
-        do_laser_off_end=do_laser_off_end,
-        header=header,
-        footer=footer,
-    )
+    # Create configuration from file or CLI arguments
+    if file_config:
+        # Merge config file with CLI arguments (CLI overrides)
+        cli_args_dict = {
+            "travel_speed": travel_speed,
+            "engrave_cutting_speed": engrave_cutting_speed,
+            "engrave_power": engrave_power,
+            "cut_cutting_speed": cut_cutting_speed,
+            "cut_power": cut_power,
+            "unit": unit,
+            "passes": passes,
+            "pass_depth": pass_depth,
+            "dwell_time": dwell_time,
+            "approximation_tolerance": approximation_tolerance,
+            "tool_off_command": tool_off_command,
+            "machine_origin": machine_origin,
+            "zero_machine": zero_machine,
+            "invert_y_axis": invert_y_axis,
+            "use_document_size": use_document_size,
+            "bed_width": bed_width,
+            "bed_height": bed_height,
+            "horizontal_offset": horizontal_offset,
+            "vertical_offset": vertical_offset,
+            "scaling_factor": scaling_factor,
+            "z_axis_start": z_axis_start,
+            "do_z_axis_start": do_z_axis_start,
+            "move_to_origin_end": move_to_origin_end,
+            "do_laser_off_start": do_laser_off_start,
+            "do_laser_off_end": do_laser_off_end,
+        }
+        combine_config = merge_config_with_cli(file_config, cli_args_dict)
+        # Override header/footer if provided via CLI
+        if header:
+            combine_config.header = header
+        if footer:
+            combine_config.footer = footer
+        config = combine_config
+    else:
+        # Use CLI arguments only
+        config = CombineConfig(
+            travel_speed=travel_speed,
+            engrave_cutting_speed=engrave_cutting_speed,
+            engrave_power=engrave_power,
+            cut_cutting_speed=cut_cutting_speed,
+            cut_power=cut_power,
+            unit=unit,
+            passes=passes,
+            pass_depth=pass_depth,
+            dwell_time=dwell_time,
+            approximation_tolerance=approximation_tolerance,
+            tool_off_command=tool_off_command,
+            machine_origin=machine_origin,
+            zero_machine=zero_machine,
+            invert_y_axis=invert_y_axis,
+            use_document_size=use_document_size,
+            bed_width=bed_width,
+            bed_height=bed_height,
+            horizontal_offset=horizontal_offset,
+            vertical_offset=vertical_offset,
+            scaling_factor=scaling_factor,
+            z_axis_start=z_axis_start,
+            do_z_axis_start=do_z_axis_start,
+            move_to_origin_end=move_to_origin_end,
+            do_laser_off_start=do_laser_off_start,
+            do_laser_off_end=do_laser_off_end,
+            header=header,
+            footer=footer,
+        )
 
     # Combine layers
     success, error_message = combine_cut_engrave(svg_file, output_path, config)
@@ -853,5 +1436,31 @@ def main(
         sys.exit(1)
 
 
+# Entry point wrapper to allow direct invocation without "main" subcommand
+def entry_point():
+    """Entry point that allows calling main command directly."""
+    import sys
+
+    # If first argument is "config", use the group
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        cli()
+    else:
+        # Otherwise, find and invoke the main command
+        # The main command is the one without a name (or with name matching the function)
+        main_cmd = None
+        for name, cmd in cli.commands.items():
+            # Find the command that's not "config" - that's our main command
+            if name != "config":
+                main_cmd = cmd
+                break
+
+        if main_cmd:
+            # Invoke the main command directly
+            main_cmd()
+        else:
+            # Fallback to group (will show help)
+            cli()
+
+
 if __name__ == "__main__":
-    main()
+    entry_point()
