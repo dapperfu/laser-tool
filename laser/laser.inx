@@ -60,11 +60,24 @@
             <param name="vertical_offset" type="float" min="-999999" max="999999" gui-text="Gcode Y Offset (unit)">0</param>
             <param name="scaling_factor" type="float" min="-999999" max="999999" gui-text="Gcode Scaling Factor">1</param>
         </page>
+        <page name="about" gui-text="About">
+            <param name="about_title" type="description" gui-text="J Tech Photonics Laser Tool"/>
+            <spacer/>
+            <param name="about_description" type="description" gui-text="This Inkscape extension generates G-code for laser cutters and plotting machines from SVG files. The extension provides a user-friendly interface for configuring cutting speeds, power settings, coordinate systems, and more."/>
+            <spacer/>
+            <param name="about_jtech_title" type="description" gui-text="About J Tech Photonics"/>
+            <spacer/>
+            <param name="about_jtech_description" type="description" gui-text="J Tech Photonics is a company specializing in laser control systems and photonics solutions. They provide hardware and software tools for laser cutting, engraving, and CNC applications."/>
+            <spacer/>
+            <param name="about_version" type="description" gui-text="Version 2.0"/>
+            <spacer/>
+            <param name="about_credits" type="description" gui-text="This extension is built on the svg_to_gcode library and is maintained by the community."/>
+        </page>
     </param>
     <effect>
         <object-type>path</object-type>
-        <effects-menu>
-            <submenu name="Generate Laser Gcode"/>
+        <effects-menu location="gh:dapperfu">
+            <submenu name="Laser Tool"/>
         </effects-menu>
     </effect>
     <script>
