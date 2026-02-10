@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
-    <name>J Tech Community Laser Tool</name>
-    <id>community.jtechphotonics.com</id>
+    <_name>_Laser Tool</_name>
+    <id>command.dapperfu.inkscape_lasertool</id>
     <param name="tabs" type="notebook">
         <page name="important_settings" gui-text="Important Settings">
             <param name="unit" type="optiongroup" appearance="combo" gui-text="Unit of Measurement">
                 <option value="mm">millimeters</option>
                 <option value="in">inches</option>
             </param>
-            <param name="travel_speed" type="float" min="0" max="999999" gui-text="Travel Speed (unit/min)">3000</param>
-            <param name="cutting_speed" type="float" min="0" max="999999" gui-text="Cutting Speed (unit/min)">750</param>
+            <param name="travel_speed" type="float" min="0" max="999999" gui-text="Travel Speed (unit/min)">1000</param>
+            <param name="cutting_speed" type="float" min="0" max="999999" gui-text="Cutting Speed (unit/min)">250</param>
             <spacer/>
             <param name="passes" type="int" min="1" max="999999" gui-text="Passes">1</param>
             <param name="pass_depth" type="float" min="0" max="999999" gui-text="Pass Depth (unit)">1</param>
