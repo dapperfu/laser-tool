@@ -550,6 +550,17 @@ def combine_cut_engrave(
         click.echo("  Order: Engrave first, then Cut")
 
     try:
+        # Read line counts before combining (needed for summary)
+        engrave_lines = 0
+        if temp_engrave_path and os.path.exists(temp_engrave_path):
+            with open(temp_engrave_path) as f:
+                engrave_lines = len(f.readlines())
+        
+        cut_lines = 0
+        if os.path.exists(temp_cut_path):
+            with open(temp_cut_path) as f:
+                cut_lines = len(f.readlines())
+        
         combine_gcode_files(temp_engrave_path, temp_cut_path, output_path)
 
         # Cleanup temporary files
@@ -565,21 +576,18 @@ def combine_cut_engrave(
             click.echo("Summary")
             click.echo("==========================================")
             click.echo(f"Output file: {output_path}")
-            if temp_engrave_path:
-                with open(temp_engrave_path) as f:
-                    engrave_lines = len(f.readlines())
+            if temp_engrave_path and engrave_lines > 0:
                 click.echo(
                     f"Engrave layer: {engrave_lines} lines "
                     f"(speed: {config.engrave_cutting_speed} {config.unit}/min, "
                     f"power: S{config.engrave_power})"
                 )
-            with open(temp_cut_path) as f:
-                cut_lines = len(f.readlines())
-            click.echo(
-                f"Cut layer:    {cut_lines} lines "
-                f"(speed: {config.cut_cutting_speed} {config.unit}/min, "
-                f"power: S{config.cut_power})"
-            )
+            if cut_lines > 0:
+                click.echo(
+                    f"Cut layer:    {cut_lines} lines "
+                    f"(speed: {config.cut_cutting_speed} {config.unit}/min, "
+                    f"power: S{config.cut_power})"
+                )
             with open(output_path) as f:
                 total_lines = len(f.readlines())
             click.echo(f"Total:        {total_lines} lines")
