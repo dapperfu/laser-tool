@@ -114,155 +114,72 @@ You can process specific layers from an SVG file by specifying the layer name. T
 2. Enter the layer name in the "Layer Name" field (leave empty to process all layers)
 3. The output filename will automatically include the layer name (e.g., `output_cut.gcode`)
 
-### Using CLI Tool
+### Using the CLI
+
+Generate a TOML config from the SVG, edit layer speed/power, then convert. Only uncommented layer tables that exist in the SVG are processed (`engrave` first, then other layers, `cut` last).
 
 ```bash
-# Process only the "cut" layer
-python -m laser.cli input.svg --layer "cut" -o output_cut.gcode
-
-# Process only the "engrave" layer
-python -m laser.cli input.svg --layer "engrave" -o output_engrave.gcode
+laser-gcode config generate input.svg -o config.toml
+laser-gcode convert input.svg -c config.toml -o output.gcode
 ```
 
-This allows you to generate separate G-code files for different operations from the same SVG file.
+`python -m laser.cli` is the same command group.
 
 ## Command-Line Interface
 
-The tool includes a **standalone CLI** that can convert SVG files to G-code without requiring the Inkscape GUI. This is one of the key features added in this fork.
+The installed command is **`laser-gcode`**. Machine and per-layer settings live in TOML, not in a long flag list.
+
+```text
+laser-gcode config generate [SVG...] [-o config.toml] [--force]
+laser-gcode config validate [-c config.toml]
+laser-gcode layers SVG
+laser-gcode convert SVG [-c config.toml] [-o out.gcode]
+```
 
 ### Installation
 
-Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-### Basic Usage
+### Generate a config from SVG layers
 
 ```bash
-# Simple conversion (processes all layers)
-python -m laser.cli input.svg -o output.gcode
-
-# Process only a specific layer
-python -m laser.cli input.svg --layer "cut" -o output_cut.gcode
-python -m laser.cli input.svg --layer "engrave" -o output_engrave.gcode
+# Canonical [global], [cut], and [engrave] are always written (active).
+# Any other Inkscape layer is written as a commented-out table.
+laser-gcode config generate examples/sample.svg -o config.toml
+laser-gcode config generate examples/demo_layers.svg -o demo.toml
 ```
 
-### Engraving and Cutting from CLI
+For `demo_layers.svg` the file includes commented sections such as `[circle]`, `[square]`, and the rest. Uncomment a section to enable that layer. Cut and engrave stay active; they are skipped at convert time if the SVG does not contain those layers.
 
-The CLI tool is particularly useful for generating separate G-code files for engraving and cutting operations from the same SVG file.
+```toml
+# [circle]
+# cutting_speed = 750.0
+# power = 128
+```
 
-#### Engraving Example
+### Convert
 
 ```bash
-# Generate G-code for engraving (low power, higher speed)
-python -m laser.cli input.svg \
-    --layer "engrave" \
-    --travel-speed 3000 \
-    --cutting-speed 1000 \
-    --tool-power-command "M3 S75;" \
-    --passes 1 \
-    -o output_engrave.gcode
+laser-gcode convert examples/sample.svg -c config.toml -o output.gcode
 ```
 
-#### Cutting Example
+If no extra layers are uncommented and the SVG has no `cut`/`engrave` layers, convert exits with an error telling you to uncomment sections (for example `[circle]`).
+
+List layer names:
 
 ```bash
-# Generate G-code for cutting (high power, slower speed)
-python -m laser.cli input.svg \
-    --layer "cut" \
-    --travel-speed 3000 \
-    --cutting-speed 250 \
-    --tool-power-command "M3 S255;" \
-    --passes 1 \
-    -o output_cut.gcode
+laser-gcode layers examples/demo_layers.svg
 ```
 
-#### Advanced Usage with Multiple Passes
+Validate a config:
 
 ```bash
-# Multiple passes for precision cutting
-python -m laser.cli input.svg \
-    --layer "cut" \
-    --travel-speed 5000 \
-    --cutting-speed 1000 \
-    --passes 3 \
-    --pass-depth 0.5 \
-    --tool-power-command "M3 S255;" \
-    -o output_cut_multipass.gcode
+laser-gcode config validate -c config.toml
 ```
 
-### Combine Cut & Engrave Tool
-
-This fork includes a specialized tool to automatically combine cut and engrave layers into a single G-code file with optimized settings for each operation:
-
-```bash
-# Combine cut and engrave layers with different settings
-python -m laser.combine_cut_engrave input.svg \
-    --engrave-cutting-speed 1000 \
-    --engrave-power 75 \
-    --cut-cutting-speed 250 \
-    --cut-power 255 \
-    --travel-speed 3000 \
-    -o output_combined.gcode
-```
-
-Or use the installed command:
-```bash
-combine-cut-engrave input.svg \
-    --engrave-cutting-speed 1000 \
-    --engrave-power 75 \
-    --cut-cutting-speed 250 \
-    --cut-power 255 \
-    -o output_combined.gcode
-```
-
-This tool automatically:
-- Processes the "engrave" layer first with engraving settings
-- Then processes the "cut" layer with cutting settings
-- Combines both into a single G-code file ready for your laser cutter
-
-### Available CLI Options
-
-**Basic Options:**
-- `--layer, -l`: Process only the specified layer (by Inkscape label)
-- `--output, -o`: Output G-code file path
-- `--unit, -u`: Unit of measurement (mm or in, default: mm)
-
-**Speed & Power:**
-- `--travel-speed, -t`: Travel speed (unit/min, default: 3000)
-- `--cutting-speed, -c`: Cutting speed (unit/min, default: 750)
-- `--tool-power-command`: Tool power command (e.g., "M3 S255;" for 100% power)
-- `--tool-off-command`: Tool off command (default: "M5;")
-
-**Passes & Depth:**
-- `--passes, -p`: Number of passes (default: 1)
-- `--pass-depth`: Pass depth (unit, default: 1)
-
-**Machine Configuration:**
-- `--machine-origin`: Machine origin (bottom-left, center, top-left, default: bottom-left)
-- `--bed-width`: Bed X width (unit, default: 200)
-- `--bed-height`: Bed Y length (unit, default: 200)
-- `--use-document-size`: Use document size as bed size (default: False)
-- `--zero-machine`: Zero machine coordinates (G92)
-- `--invert-y-axis`: Invert Y-axis
-
-**Advanced Options:**
-- `--header-file`: Custom G-code header file
-- `--footer-file`: Custom G-code footer file
-- `--horizontal-offset`: G-code X offset (unit)
-- `--vertical-offset`: G-code Y offset (unit)
-- `--scaling-factor`: G-code scaling factor (default: 1)
-- `--dwell-time`: Dwell time before moving (ms)
-- `--approximation-tolerance`: Approximation tolerance (default: 0.01)
-
-For a complete list of options, run:
-```bash
-python -m laser.cli --help
-python -m laser.combine_cut_engrave --help
-```
-
-See the `examples/` directory for more usage examples and shell scripts demonstrating various workflows.
+See the `examples/` directory for scripts that follow this workflow.
 
 ## Contribute
 

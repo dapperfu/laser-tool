@@ -1,30 +1,23 @@
 #!/bin/bash
-# Basic usage example for SVG to G-code conversion
+# Generate a config from sample.svg and convert cut + engrave layers.
 #
-# This script can be run from either:
-#   - Top level: ./examples/basic_usage.sh
-#   - Examples directory: cd examples && ./basic_usage.sh
+# Run from the project root or from examples/.
 
-# Get the directory where this script is located
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Get the project root (parent of examples directory)
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
-# Determine SVG file path - check if we're in examples directory or top level
-if [ -f "sample.svg" ]; then
-    SVG_FILE="sample.svg"
-elif [ -f "$SCRIPT_DIR/sample.svg" ]; then
-    SVG_FILE="$SCRIPT_DIR/sample.svg"
+if [ -f "examples/sample.svg" ]; then
+    SVG_FILE="examples/sample.svg"
 else
-    echo "Error: sample.svg not found"
+    echo "Error: examples/sample.svg not found"
     exit 1
 fi
 
-# Simple conversion with default settings
-python -m laser.cli "$SVG_FILE" -o output.gcode
+CLI=(python -m laser.cli)
 
-# Conversion with custom output filename
-python -m laser.cli "$SVG_FILE" --output my_output.gcode
-
-# Conversion with different units
-python -m laser.cli "$SVG_FILE" --unit in -o output_inches.gcode
+"${CLI[@]}" config generate "$SVG_FILE" -o examples/sample_config.toml --force
+"${CLI[@]}" convert "$SVG_FILE" -c examples/sample_config.toml -o examples/output.gcode
+echo "Wrote examples/sample_config.toml and examples/output.gcode"

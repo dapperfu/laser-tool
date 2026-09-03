@@ -6,8 +6,14 @@ which can be used by both the Inkscape extension and the CLI tool.
 """
 
 import os
+import sys
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from xml.etree import ElementTree
+
+laser_dir = Path(__file__).parent
+if str(laser_dir) not in sys.path:
+    sys.path.insert(0, str(laser_dir))
 
 # Import svg_to_gcode - it's in laser/svg_to_gcode/ but when laser/ is in path,
 # we can import it directly as svg_to_gcode

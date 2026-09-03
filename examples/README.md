@@ -1,135 +1,38 @@
 # Examples
 
-This directory contains example scripts demonstrating how to use the SVG to G-code conversion tool.
+Scripts demonstrating the `laser-gcode` CLI (`python -m laser.cli` is the same command group).
 
-## Running Example Scripts
+## Running example scripts
 
-All example scripts can be run from either location:
+From the project root:
 
-**From the project root:**
 ```bash
 ./examples/basic_usage.sh
 ./examples/advanced_usage.sh
-./examples/celtic_fleur_hair.sh
+./examples/combine_cut_engrave.sh examples/sample.svg
 ./examples/demo_multi_layer_settings.sh
 ```
 
-**From the examples directory:**
-```bash
-cd examples
-./basic_usage.sh
-./advanced_usage.sh
-./celtic_fleur_hair.sh
-./demo_multi_layer_settings.sh
-```
-
-The scripts automatically detect their location and find the appropriate SVG files.
-
-## Basic Usage
-
-The `basic_usage.sh` script shows a simple conversion with default settings.
-
-## Advanced Usage
-
-The `advanced_usage.sh` script demonstrates:
-- Custom headers and footers
-- Coordinate transformations
-- Multiple passes
-- Layer selection
-
-## Layer Selection
-
-To process only a specific layer from an SVG:
+## Commands
 
 ```bash
-python -m laser.cli input.svg --layer "cut" -o output_cut.gcode
-python -m laser.cli input.svg --layer "engrave" -o output_engrave.gcode
+python -m laser.cli config generate input.svg -o config.toml
+python -m laser.cli layers input.svg
+python -m laser.cli convert input.svg -c config.toml -o output.gcode
 ```
 
-This allows you to generate separate G-code files for different operations (cutting vs. engraving) from the same SVG file.
-
-## Multi-Layer Settings Demonstration
-
-The `demo_multi_layer_settings.sh` script demonstrates how to process multiple layers from a single SVG file with different settings for each layer. This is useful when you need:
-
-- Different travel speeds for different operations
-- Different cutting speeds based on material thickness
-- Different power settings (laser intensity) for cutting vs. engraving
-- Multiple passes for high-precision work
-- Dwell times for specific operations
-
-### Usage
-
-First, generate a demo SVG file with multiple layers (defaults to `examples/demo_layers.svg`):
+Or after `pip install -e .`:
 
 ```bash
-python generate_demo_svg.py
-# Or specify a custom path:
-python generate_demo_svg.py -o examples/demo_layers.svg
+laser-gcode config generate input.svg -o config.toml
+laser-gcode convert input.svg -c config.toml -o output.gcode
 ```
 
-Then run the demonstration script (from either location):
+`config generate` always writes active `[global]`, `[cut]`, and `[engrave]` tables. Other Inkscape layers (for example `circle` in `demo_layers.svg`) are written commented out. Uncomment a table to include that layer in `convert`. Job order is engrave, then other enabled layers, then cut.
 
-```bash
-# From project root:
-./examples/demo_multi_layer_settings.sh
+## Sample SVG files
 
-# Or from examples directory:
-cd examples && ./demo_multi_layer_settings.sh
-```
-
-This will generate 8 separate G-code files, one for each layer, each with optimized settings:
-
-- **Circle**: High power (100%), slow cutting for thick materials
-- **Square**: Medium power (78%), standard cutting
-- **Triangle**: Lower power (59%), fast cutting for thin materials
-- **Ellipse**: Low power (39%), slow speed for engraving
-- **Star**: Medium power (71%), multiple passes for precision
-- **Hexagon**: High power (86%), with dwell time
-- **Line**: Very low power (31%), fast speed for scoring
-- **Polyline**: Low power (47%), decorative work
-
-### Power Settings Reference
-
-The tool power command uses `M3 S<value>` where S ranges from 0-255:
-
-- **S0-S63** (0-25%): Very low power - Light engraving, scoring
-- **S64-S127** (25-50%): Low power - Engraving, thin materials
-- **S128-S191** (50-75%): Medium power - Standard cutting
-- **S192-S255** (75-100%): High power - Thick materials, deep cuts
-
-### Customizing Settings
-
-You can customize the settings for each layer by modifying the script or running individual commands:
-
-```bash
-# High power cutting
-python -m laser.cli examples/demo_layers.svg --layer "circle" \
-    --travel-speed 3000 \
-    --cutting-speed 500 \
-    --tool-power-command "M3 S255;" \
-    -o circle_cut.gcode
-
-# Low power engraving
-python -m laser.cli examples/demo_layers.svg --layer "ellipse" \
-    --travel-speed 2000 \
-    --cutting-speed 300 \
-    --tool-power-command "M3 S100;" \
-    -o ellipse_engrave.gcode
-
-# Multiple passes for precision
-python -m laser.cli examples/demo_layers.svg --layer "star" \
-    --travel-speed 2000 \
-    --cutting-speed 600 \
-    --tool-power-command "M3 S180;" \
-    --passes 3 \
-    -o star_precise.gcode
-```
-
-## Sample SVG Files
-
-The following SVG files are included in the examples directory:
-
-- **`sample.svg`**: A simple example SVG with cut and engrave layers for basic testing
-- **`demo_layers.svg`**: A comprehensive demo SVG with 8 different shapes, each on its own layer (generated by `generate_demo_svg.py`)
-- **`CelticFleurHair.svg`**: A more complex example with cut and engrave layers (if present)
+- **`sample.svg`**: `cut` and `engrave` layers
+- **`demo_layers.svg`**: eight named layers (`circle`, `square`, `triangle`, `ellipse`, `star`, `hexagon`, `line`, `polyline`)
+- **`EngraveCut.svg`**: cut and engrave artwork (if present)
+- **`CelticFleurHair.svg`**: more complex cut/engrave example (if present)
