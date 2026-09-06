@@ -17,21 +17,53 @@ else:
         tomllib = None  # type: ignore
 
 CANONICAL_LAYERS = ("cut", "engrave")
+DEFAULT_CONFIG_NAME = "config.toml"
 
 CUT_DEFAULTS = {"cutting_speed": 250.0, "power": 255}
 ENGRAVE_DEFAULTS = {"cutting_speed": 1000.0, "power": 75}
 EXTRA_LAYER_DEFAULTS = {"cutting_speed": 750.0, "power": 128}
 
 
-def find_config_file(explicit_path: str | None) -> Path | None:
-    """Find configuration file: explicit path, cwd/config.toml, then LASER_GCODE_CONFIG."""
+def sibling_toml_path(svg_path: str | Path) -> Path:
+    """Return ``<svg-stem>.toml`` next to the SVG (e.g. EngraveCut.svg → EngraveCut.toml)."""
+    return Path(svg_path).with_suffix(".toml")
+
+
+def default_generate_config_path(svg_files: list[str] | tuple[str, ...] | None) -> Path:
+    """Default write path: sibling ``.toml`` for one SVG, otherwise ``config.toml`` in cwd."""
+    if svg_files and len(svg_files) == 1:
+        return sibling_toml_path(svg_files[0])
+    return Path.cwd() / DEFAULT_CONFIG_NAME
+
+
+def find_config_file(explicit_path: str | None, svg_path: str | Path | None = None) -> Path | None:
+    """Find a configuration file.
+
+    Order: ``-c`` path, ``<svg-stem>.toml`` beside the SVG then in cwd,
+    ``config.toml`` in cwd, then ``LASER_GCODE_CONFIG``.
+    """
     if explicit_path:
         path = Path(explicit_path)
         return path if path.exists() else None
 
-    cwd_config = Path.cwd() / "config.toml"
-    if cwd_config.exists():
-        return cwd_config
+    candidates: list[Path] = []
+    if svg_path is not None:
+        svg = Path(svg_path)
+        candidates.append(sibling_toml_path(svg))
+        cwd_named = Path.cwd() / f"{svg.stem}.toml"
+        if cwd_named.resolve() != candidates[0].resolve():
+            candidates.append(cwd_named)
+
+    candidates.append(Path.cwd() / DEFAULT_CONFIG_NAME)
+
+    seen: set[Path] = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if path.exists():
+            return path
 
     env_var = os.getenv("LASER_GCODE_CONFIG")
     if env_var:
@@ -41,15 +73,20 @@ def find_config_file(explicit_path: str | None) -> Path | None:
     return None
 
 
-def load_config(config_path: str | None = None) -> dict:
+def load_config(config_path: str | None = None, svg_path: str | Path | None = None) -> dict:
     """Load and validate configuration from a TOML file."""
     if tomllib is None:
         raise ImportError("TOML support requires tomli for Python < 3.11. Install with: pip install tomli")
 
-    resolved_path = find_config_file(config_path)
+    resolved_path = find_config_file(config_path, svg_path=svg_path)
     if resolved_path is None:
+        hint = ""
+        if svg_path is not None:
+            hint = f" Looked for {sibling_toml_path(svg_path)} then {DEFAULT_CONFIG_NAME}."
         raise FileNotFoundError(
-            "Configuration file not found. Use 'laser-gcode config generate' to create one, or specify with --config/-c"
+            "Configuration file not found."
+            + hint
+            + " Use 'laser-gcode config generate' to create one, or specify with --config/-c"
         )
 
     with open(resolved_path, "rb") as f:

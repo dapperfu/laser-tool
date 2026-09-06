@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "laser-gcode"
-version = "2.1.0"
+version = "2.1.2"
 description = "Inkscape extension and CLI tool for generating G-code for laser cutters from SVG files"
 readme = "README.md"
 requires-python = ">=3.10"

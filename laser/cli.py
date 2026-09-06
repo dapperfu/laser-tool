@@ -2,10 +2,10 @@
 Command-line interface for SVG to G-code conversion.
 
 Usage:
-    laser-gcode config generate [SVG...] [-o config.toml]
+    laser-gcode config generate [SVG...] [-o drawing.toml]
     laser-gcode config validate [-c config.toml]
     laser-gcode layers SVG
-    laser-gcode convert SVG [-c config.toml] [-o out.gcode]
+    laser-gcode convert SVG [-c drawing.toml] [-o out.gcode]
 """
 
 from __future__ import annotations
@@ -30,7 +30,13 @@ try:
 except ImportError:
     pass
 
-from laser.config import find_config_file, generate_config_from_svgs, load_config, validate_config
+from laser.config import (
+    default_generate_config_path,
+    find_config_file,
+    generate_config_from_svgs,
+    load_config,
+    validate_config,
+)
 from laser.convert_job import convert_svg_layers
 from laser.svg_layers import list_svg_layers
 
@@ -52,7 +58,7 @@ def config_group():
     "-o",
     type=click.Path(),
     default=None,
-    help="Path to write (default: config.toml in the current directory)",
+    help="Path to write (default: <svg>.toml next to one SVG, otherwise config.toml)",
 )
 @click.option(
     "--force",
@@ -65,7 +71,7 @@ def config_generate(svg_files: tuple[str, ...], output: str | None, force: bool)
     Always writes [global], [cut], and [engrave]. Other layers found in the
     SVG(s) are written as commented-out tables (uncomment to enable).
     """
-    config_path = Path(output) if output else Path.cwd() / "config.toml"
+    config_path = Path(output) if output else default_generate_config_path(svg_files)
 
     if config_path.exists() and not force:
         if not click.confirm(f"Configuration file exists at {config_path}. Overwrite?"):
@@ -122,7 +128,7 @@ def layers_cmd(svg_file: str) -> None:
     "-c",
     type=click.Path(exists=True, readable=True),
     default=None,
-    help="Path to configuration file (default: config.toml in the current directory)",
+    help="Path to configuration file (default: <svg>.toml, then config.toml)",
 )
 @click.option(
     "--output",
@@ -134,7 +140,8 @@ def layers_cmd(svg_file: str) -> None:
 def convert_cmd(svg_file: str, config: str | None, output: str | None) -> None:
     """Convert SVG layers to G-code using a TOML config."""
     try:
-        file_config = load_config(config)
+        resolved_config = find_config_file(config, svg_path=svg_file)
+        file_config = load_config(config, svg_path=svg_file)
     except FileNotFoundError as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(1)
@@ -145,6 +152,7 @@ def convert_cmd(svg_file: str, config: str | None, output: str | None) -> None:
     output_path = output if output else str(Path(svg_file).with_suffix(".gcode"))
 
     click.echo(f"Input SVG:  {svg_file}")
+    click.echo(f"Config:     {resolved_config}")
     click.echo(f"Output:     {output_path}")
     click.echo("")
 
